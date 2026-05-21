@@ -125,7 +125,7 @@ private lemma IsBSTAux_iff_bounded_sorted (t : Tree α) [LinearOrder α] :
       (∀ x ∈ t.toKeyList, ub.elim True (x < ·)) ∧
       t.toKeyList.Pairwise (· < ·) := by
   induction t with
-  | nil => intro lb ub; simp [IsBSTAux]
+  | nil => intro lb ub; simp
   | node k l r ihl ihr =>
     intro lb ub
     rw [IsBSTAux_node, ihl lb (some k), ihr (some k) ub]

@@ -171,13 +171,14 @@ section Invariants
 /-- BST invariant parameterised by optional lower/upper key bounds.
 `IsBSTAux t lb ub` holds iff every key in `t` lies strictly in `(lb, ub)`
 (absent bound = ±∞) and children satisfy the BST property recursively. -/
-def IsBSTAux [LinearOrder α] : Tree α → Option α → Option α → Prop
-  | .nil, _, _ => True
-  | l △[k] r, lb, ub =>
-      lb.elim True (· < k) ∧
-      ub.elim True (k < ·) ∧
-      IsBSTAux l lb (some k) ∧
-      IsBSTAux r (some k) ub
+inductive IsBSTAux [LinearOrder α] : Tree α → Option α → Option α → Prop where
+  | nil (lb ub : Option α) : IsBSTAux .nil lb ub
+  | node {l r : Tree α} {k : α} {lb ub : Option α}
+      (hlb : lb.elim True (· < k))
+      (hub : ub.elim True (k < ·))
+      (hl  : IsBSTAux l lb (some k))
+      (hr  : IsBSTAux r (some k) ub) :
+      IsBSTAux (l △[k] r) lb ub
 
 def IsBST [LinearOrder α] (t : Tree α) : Prop := t.IsBSTAux none none
 
@@ -186,15 +187,20 @@ end Invariants
 /-! ### Accessor Lemmas for IsBST -/
 section IsBSTAccessors
 
+@[simp] lemma IsBSTAux_nil [LinearOrder α] (lb ub : Option α) :
+    IsBSTAux (.nil : Tree α) lb ub := .nil lb ub
+
 @[simp] lemma IsBSTAux_node [LinearOrder α] (l : Tree α) (k : α) (r : Tree α)
     (lb ub : Option α) :
     IsBSTAux (l △[k] r) lb ub ↔
       lb.elim True (· < k) ∧ ub.elim True (k < ·) ∧
-      IsBSTAux l lb (some k) ∧ IsBSTAux r (some k) ub := Iff.rfl
+      IsBSTAux l lb (some k) ∧ IsBSTAux r (some k) ub :=
+  ⟨fun h => by cases h with | node hlb hub hl hr => exact ⟨hlb, hub, hl, hr⟩,
+   fun ⟨h1, h2, h3, h4⟩ => .node h1 h2 h3 h4⟩
 
 @[simp] lemma IsBST_node [LinearOrder α] (l : Tree α) (k : α) (r : Tree α) :
     IsBST (l △[k] r) ↔ IsBSTAux l none (some k) ∧ IsBSTAux r (some k) none := by
-  simp [IsBST, IsBSTAux]
+  simp [IsBST, IsBSTAux_node]
 
 end IsBSTAccessors
 
