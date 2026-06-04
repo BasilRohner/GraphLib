@@ -386,10 +386,20 @@ lemma head_eq_tail_of_length_zero (w : Walk α) (h : w.length = 0)
 /-- The tail of a `dropUntil` suffix walk equals the tail of the original walk.
     Lifts `VertexSeq.tail_dropUntil` to the `Walk` level so that `▸` can match
     goals of the form `(⟨w.seq.dropUntil v hv, ...⟩ : Walk α).tail`. -/
-@[simp, grind =]
+@[simp, grind .]
 lemma walk_tail_dropUntil [DecidableEq α] (w : Walk α) (v : α) (hv : v ∈ w.seq.toList) :
     (⟨w.seq.dropUntil v hv, dropUntil_iswalk w.seq v hv w.valid⟩ : Walk α).tail = w.tail :=
   VertexSeq.tail_dropUntil w.seq v hv
+
+/-- The head of walk `w` lies in the prefix vertex list `(takeUntil u).dropTail.toList`
+    — the vertices before `u` in the walk, with `u` itself removed by `dropTail`. -/
+@[simp, grind .]
+lemma walk_head_mem_prefix [DecidableEq α] (w : Walk α)
+    (u : α) (hu_supp : u ∈ w.support) :
+    w.head ∈ (w.seq.takeUntil u hu_supp).dropTail.toList := by
+  have h : (w.seq.takeUntil u hu_supp).dropTail.head = w.head := by
+    simp [VertexSeq.dropTail_head, VertexSeq.head_takeUntil]
+  exact h ▸ VertexSeq.head_mem_toList _
 
 /-! ## Walk append, reverse and related lemmas -/
 
@@ -489,6 +499,16 @@ def IsCycle (w : Walk α) : Prop :=
 @[simp, grind =] lemma toList_append (p q : VertexSeq α) :
     (p.append q).toList = q.toList ++ p.toList := by
   induction q generalizing p <;> grind
+
+/-- The support of `w` splits into the suffix's support followed by the prefix's vertex list,
+    at the `dropUntil`/`takeUntil` cut point `u`. -/
+lemma walk_support_split [DecidableEq α] (w : Walk α)
+    (u : α) (hu_supp : u ∈ w.support) (hu_ne_hd : u ≠ w.head) :
+    w.support =
+      (w.seq.dropUntil u hu_supp).toList ++
+      (w.seq.takeUntil u hu_supp).dropTail.toList := by
+  simp only [Walk.support]
+  rw [← toList_append, vertex_seq_split w.seq u hu_supp hu_ne_hd]
 
 lemma append_dropTail_eq_dropTail_append (w1 w2 : Walk α) (h : w1.tail = w2.head)
   (hlen : w2.head ≠ w2.tail) :

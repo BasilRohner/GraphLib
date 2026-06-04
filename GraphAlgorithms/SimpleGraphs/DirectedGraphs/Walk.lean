@@ -21,6 +21,7 @@ inductive IsWalkIn {V : Type*} (G : SimpleDiGraph V) : Walk V → Prop
 /-- A walk of positive length in G has a first outgoing edge from its head.
     Usage:
     - Helper lemma to prove `BreadFirstSearch.bfs_complete_aux` -/
+@[simp, grind .]
 lemma isWalkIn_first_edge {V : Type*}
     (G : SimpleDiGraph V) (w : Walk V)
     (hw : Walk.IsWalkIn G w) (hlen : w.length > 0) :
@@ -51,6 +52,7 @@ variable {α : Type*} [DecidableEq α]
 
 /-- A path is a walk whose support (the list of vertices from VertexSeq.toList)
     has no duplicate vertices — List.Nodup. -/
+@[simp, grind .]
 def IsPathIn (G : SimpleDiGraph α) (w : Walk α) : Prop := IsWalkIn G w ∧ w.IsPath
 
 omit [DecidableEq α] in
@@ -68,6 +70,7 @@ private lemma isPathIn_of_append_single_left {G : SimpleDiGraph α} {w' : Walk �
 
 /-- If w is a simple path (no repeated vertices) in G, and u is any vertex on that path,
     then the portion of the path from u onward is also a simple path in G. -/
+@[simp, grind .]
 lemma IsPathIn.suffix (G : SimpleDiGraph α) (w : Walk α) (u : α)
     (hu : u ∈ w.support) (hw : IsPathIn G w) :
     IsPathIn G ⟨w.seq.dropUntil u hu, dropUntil_iswalk w.seq u hu w.valid⟩ := by
@@ -106,6 +109,7 @@ lemma IsPathIn.suffix (G : SimpleDiGraph α) (w : Walk α) (u : α)
 
 /-- Shortest path - analytical definition of distance:
     the length of minimum path between two vertices `v₁` and `v₂` in graph `G` -/
+@[simp, grind .]
 noncomputable def shortestPath (G : SimpleDiGraph α) (v₁ : α) (v₂ : α) : ℕ∞ :=
   /- ⨅: the indexed infimum (greatest lower bound) operator.
      - `⨅ (x : T), f x` is `iInf f`
@@ -124,9 +128,9 @@ noncomputable def shortestPath (G : SimpleDiGraph α) (v₁ : α) (v₂ : α) : 
 --     shortestPath G s v ≤ shortestPath G s u + 1 := by
 --   sorry
 
-
 /-- Shortest path - analytical definition of distance:
     the length of minimum path between two vertices `v₁` and `v₂` in graph `G` -/
+@[simp, grind .]
 noncomputable
 def weighted_distance (G : SimpleDiGraph α) (len : α → α → ℕ) (v₁ : α) (v₂ : α) : ℕ∞ :=
   ⨅ (w : Walk α) (_ : IsPathIn G w ∧ w.head = v₁ ∧ w.tail = v₂), (w.weighted_length len : ℕ∞)
