@@ -1,3 +1,4 @@
+import Mathlib.Data.Finset.Basic
 import GraphAlgorithms.SimpleGraphs.Walk
 import GraphAlgorithms.SimpleGraphs.DirectedGraphs.SimpleDiGraphs
 
@@ -47,7 +48,7 @@ end Walk
 -- Analytical definition of `path` for bfs correctness analysis.
 namespace Path
 
-open Walk
+open Finset Walk SimpleDiGraph
 variable {α : Type*} [DecidableEq α]
 
 /-- A path is a walk whose support (the list of vertices from VertexSeq.toList)
@@ -106,6 +107,32 @@ lemma IsPathIn.suffix (G : SimpleDiGraph α) (w : Walk α) (u : α)
     unfold Walk.IsPath Walk.support
     exact VertexSeq.dropUntil_toList_nodup hu hw.2
 
+omit [DecidableEq α]
+/-- Any simple path in `G` has strictly fewer edges than vertices: `w.length < |V(G)|`.
+    This is the classical fact that a simple path visits distinct vertices,
+    so its support (a nodup list) has at most |V(G)| elements,
+    and the support length equals `w.length + 1`. -/
+@[simp, grind .]
+lemma path_length_lt_card_vertices (G : SimpleDiGraph α) (w : Walk α)
+    (hw : Path.IsPathIn G w) : w.length < #V(G) := by
+  have h_supp_len : w.support.length = w.length + 1 := by
+    simp [Walk.support, VertexSeq.toList_length_eq]
+  have hsupp_sub : ∀ x ∈ w.support, x ∈ V(G) := by
+    suffices h : ∀ (ww : Walk α), IsWalkIn G ww → ∀ x ∈ ww.support, x ∈ V(G) from h w hw.1
+    intro ww hww
+    induction hww with
+    | singleton v hv => grind
+    | cons w' u' hw' hedg ih =>
+      intro x hx
+      simp only [support, append_single, VertexSeq.toList, List.mem_cons] at hx
+      rcases hx with rfl | hx <;> grind [G.incidence _ hedg]
+  have h_le : w.support.length ≤ #V(G) :=
+    open scoped Classical in
+    calc w.support.length
+        = w.support.toFinset.card := (List.toFinset_card_of_nodup hw.2).symm
+      _ ≤ V(G).card               := Finset.card_le_card
+            (fun x hx => hsupp_sub x (List.mem_toFinset.mp hx))
+  omega
 
 /-- Shortest path - analytical definition of distance:
     the length of minimum path between two vertices `v₁` and `v₂` in graph `G` -/

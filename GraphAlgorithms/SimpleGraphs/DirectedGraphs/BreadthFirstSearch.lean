@@ -16,7 +16,7 @@ open SimpleDiGraph
 open Walk Path  -- from GraphAlgorithms.SimpleGraphs.DirectedGraphs.Walk
 open Finset
 
-/-! ## Properties within BFS: vertex set update, walk, list -/
+/-! ## Properties within BFS process: vertex set update, List, Walk, Path -/
 namespace bfsBattery
 
 /-- The next BFS frontier — out-neighbours of the current frontier minus already-visited
@@ -194,15 +194,15 @@ lemma walk_suffix_avoids_visited_union_next (G : SimpleDiGraph α)
   have hw'_head : w'.head = u := VertexSeq.head_dropUntil w.seq u hu_supp
   have hw'_path : Path.IsPathIn G w' := Path.IsPathIn.suffix G w u hu_supp hw
   have hx_supp : x ∈ w.support := VertexSeq.mem_dropUntil w.seq u x hu_supp hx
-  -- *Note* x ∉ visited: lift x to w.support and apply hw_avoid;
-  --        x ≠ w.head because w.support is nodup and w.head lies in the prefix, not the suffix w'
+  -- x ∉ visited: lift x to w.support and apply hw_avoid;
+  -- x ≠ w.head because w.support is nodup and w.head lies in the prefix, not the suffix w'
   have hlist := Walk.walk_support_split w u hu_supp hu_ne_hd
   have hw_head_pfx := Walk.walk_head_mem_prefix w u hu_supp
   have hx_ne_hd : x ≠ w.head :=
     (List.nodup_append.mp (hlist ▸ hw.2)).2.2 x hx w.head hw_head_pfx
   refine Finset.notMem_union.mpr ⟨hw_avoid x hx_supp hx_ne_hd, ?_⟩
-  -- *Note* x ∉ next: x lies in w'.support.dropLast, which equals as (the prefix before u),
-  --        and as is disjoint from next by hu_prev
+  -- x ∉ next: x lies in w'.support.dropLast, which equals as (the prefix before u),
+  -- and as is disjoint from next by hu_prev
   have hxu_val : x ≠ u := hw'_head ▸ hxu
   have hu_last : w'.support.getLast (List.ne_nil_of_mem hx) = u := by
     simp only [Walk.support, VertexSeq.toList_getLast_is_head]; exact hw'_head
@@ -215,6 +215,114 @@ lemma walk_suffix_avoids_visited_union_next (G : SimpleDiGraph α)
     rwa [hu_last] at this
   have hu_nas : u ∉ as := fun h => absurd hu_next (hu_prev u h)
   exact hu_prev x (list_left_unique_split heq2 hu_ndL hu_nas ▸ hx_dL)
+
+/-- For any positive-length path from the BFS frontier that avoids visited vertices,
+    there exists a strictly shorter path from some vertex in the next frontier to the
+    same endpoint, whose interior avoids `visited ∪ next`.
+    This is the pure graph-combinatorial content of the BFS completeness inductive step. -/
+@[simp]
+lemma bfs_inductive_step_witness (G : SimpleDiGraph α)
+    (frontier visited : Finset α)
+    (next : Finset α)
+    (hnext_def : next = (frontier.biUnion (fun u ↦ N⁺(G,u))) \ visited)
+    (w : Walk α) (hw : Path.IsPathIn G w)
+    (hw_head : w.head ∈ frontier) (h_len : 0 < w.length)
+    (hw_avoid : ∀ x ∈ w.support, x ≠ w.head → x ∉ visited)
+    (hfv : frontier ⊆ visited) :
+    ∃ w' : Walk α,
+      w'.head ∈ next ∧ w'.tail = w.tail ∧ Path.IsPathIn G w' ∧
+      w'.length < w.length ∧
+      ∀ x ∈ w'.support, x ≠ w'.head → x ∉ visited ∪ next := by
+  obtain ⟨u, hu_supp, hu_next, hu_ne_hd, as, bs, heq_split, hu_prev⟩ :=
+    first_next_entry_of_path G frontier visited next hnext_def w hw hw_head h_len hw_avoid hfv
+  let w' : Walk α := ⟨w.seq.dropUntil u hu_supp, dropUntil_iswalk w.seq u hu_supp w.valid⟩
+  have hw'_head : w'.head = u := VertexSeq.head_dropUntil w.seq u hu_supp
+  exact ⟨w', hw'_head ▸ hu_next, Walk.walk_tail_dropUntil w u hu_supp,
+    Path.IsPathIn.suffix G w u hu_supp hw,
+    VertexSeq.dropUntil_length_lt_of_ne_head hu_supp hu_ne_hd,
+    walk_suffix_avoids_visited_union_next G visited next w hw hw_avoid
+      u hu_supp hu_ne_hd hu_next as bs heq_split hu_prev⟩
+
+/-- Appending an unvisited out-neighbor to a simple path yields a longer simple path
+    from the same root, with the new vertex as its only new support element. -/
+@[simp]
+lemma path_extend_by_edge (G : SimpleDiGraph α)
+    (root v_src u : α) (visited : Finset α)
+    (w_v : Walk α) (hw_path : Path.IsPathIn G w_v)
+    (hw_head : w_v.head = root) (hw_tail : w_v.tail = v_src)
+    (hw_supp : ∀ x ∈ w_v.support, x ∈ visited)
+    (hedg : (v_src, u) ∈ G.edgeSet) (hu_not_vis : u ∉ visited) :
+    ∃ w : Walk α, Path.IsPathIn G w ∧ w.head = root ∧ w.tail = u ∧
+      (w.length : ℕ∞) = w_v.length + 1 ∧ ∀ x ∈ w.support, x ∈ visited ∪ {u} := by
+  have h_neq : u ≠ w_v.tail := hw_tail ▸ Ne.symm (G.loopless (v_src, u) hedg)
+  refine ⟨w_v.append_single u h_neq, ?_, ?_, ?_, ?_, ?_⟩
+  · constructor
+    · exact IsWalkIn.cons w_v u hw_path.1 (hw_tail ▸ hedg)
+    · simp only [Walk.IsPath, Walk.append_single, Walk.support, VertexSeq.toList]
+      exact List.nodup_cons.mpr ⟨fun h => hu_not_vis (hw_supp u h), hw_path.2⟩
+  · change (w_v.seq.cons u).head = root
+    rw [VertexSeq.con_head_eq]; change w_v.head = root; exact hw_head
+  · rfl
+  · have hlen : (w_v.append_single u h_neq).length = 1 + w_v.length := rfl
+    push_cast [hlen]; ring
+  · intro x hx
+    simp only [Walk.append_single, Walk.support, VertexSeq.toList, List.mem_cons] at hx
+    rcases hx with rfl | hx
+    · exact Finset.mem_union_right _ (Finset.mem_singleton.mpr rfl)
+    · exact Finset.mem_union_left _ (hw_supp x hx)
+
+/-- If every current-frontier vertex has a path of length `d` from root through `visited`,
+    then every next-frontier vertex has a path of length `d+1` from root through `visited ∪ next`.
+    This is the BFS level-invariant propagation: the soundness analogue of
+    `bfs_inductive_step_witness`. -/
+@[simp]
+lemma next_frontier_has_paths (G : SimpleDiGraph α)
+    (root : α) (visited frontier : Finset α) (d : ℕ)
+    (next : Finset α)
+    (hnext_def : next = (frontier.biUnion (fun u ↦ N⁺(G,u))) \ visited)
+    (h_front : ∀ v ∈ frontier,
+        ∃ w : Walk α, Path.IsPathIn G w ∧ w.head = root ∧ w.tail = v ∧
+          (w.length : ℕ∞) = d ∧ ∀ x ∈ w.support, x ∈ visited) :
+    ∀ u ∈ next, ∃ w : Walk α, Path.IsPathIn G w ∧ w.head = root ∧ w.tail = u ∧
+      (w.length : ℕ∞) = d + 1 ∧ ∀ x ∈ w.support, x ∈ visited ∪ next := by
+  intro u hu_next
+  have hu_in_next : u ∈ next := hu_next
+  simp only [hnext_def, Finset.mem_sdiff, Finset.mem_biUnion] at hu_next
+  obtain ⟨⟨v_src, hv_front, hv_neigh⟩, hu_not_vis⟩ := hu_next
+  simp only [OutNeighbors, Finset.mem_filter] at hv_neigh
+  obtain ⟨_, e, he_edge, he1, he2, _⟩ := hv_neigh
+  have hedg : (v_src, u) ∈ G.edgeSet := by grind
+  obtain ⟨w_v, hw_path, hw_head, hw_tail, hw_len, hw_supp⟩ := h_front v_src hv_front
+  obtain ⟨w, hw_w, hw_w_head, hw_w_tail, hw_wlen, hw_wsupp⟩ :=
+    path_extend_by_edge G root v_src u visited w_v hw_path hw_head hw_tail hw_supp hedg hu_not_vis
+  exact ⟨w, hw_w, hw_w_head, hw_w_tail,
+    by rw [hw_wlen, hw_len],
+    fun x hx => by
+      rcases Finset.mem_union.mp (hw_wsupp x hx) with h | h
+      · exact Finset.mem_union_left _ h
+      · exact Finset.mem_union_right _ (Finset.mem_singleton.mp h ▸ hu_in_next)⟩
+
+omit [DecidableEq α] in
+/-- The trivial length-0 path at the BFS root satisfies all `bfs_sound` `h_front` conditions
+    for the initial call. This is the BFS initialization invariant: the singleton frontier
+    `{root}` already has a valid path witness of length 0 for every vertex it contains. -/
+@[simp, grind .]
+lemma bfs_initial_front_invariant (G : SimpleDiGraph α) (root : α)
+    (h_root : root ∈ G.vertexSet) :
+    ∀ u ∈ ({root} : Finset α),
+      ∃ w : Walk α, Path.IsPathIn G w ∧ w.head = root ∧ w.tail = u ∧
+        (w.length : ℕ∞) = 0 ∧ ∀ x ∈ w.support, x ∈ ({root} : Finset α) := by
+  intro u hu
+  have hu_eq : u = root := Finset.mem_singleton.mp hu
+  exact ⟨
+    ⟨.singleton root, .singleton root⟩,
+    ⟨IsWalkIn.singleton root h_root, by simp [Walk.IsPath, Walk.support, VertexSeq.toList]⟩,
+    rfl,
+    hu_eq.symm,
+    by simp [Walk.length, VertexSeq.length],
+    fun x hx => by
+      simp only [support, VertexSeq.toList, List.mem_cons, List.not_mem_nil, or_false] at hx
+      exact Finset.mem_singleton.mpr hx⟩
 
 end bfsBattery
 
@@ -271,11 +379,6 @@ decreasing_by
   -- Conclusion: `|V(G) \ (visited ∪ next)| ≤ |V(G) \ visited| - 1`.
   grind [bfsBattery.decreasing_unvisited_vertices_count G visited next ((V(G) \ visited).card - 1)
     hnext_sub hnext_nonempty (by omega)]
-  -- have h := bfsBattery.decreasing_unvisited_vertices_count G visited next
-  --   ((V(G) \ visited).card - 1) hnext_sub hnext_nonempty (by omega)
-  -- -- `change` normalises the goal from the unfolded `let`-definition of `next` back to `next`,
-  -- -- so that `h` and the goal share the same atom and `omega` can close it.
-  -- change (V(G) \ (visited ∪ next)).card < (V(G) \ visited).card; omega
 
 /-- BFS distance map from `v` to all vertices of `G`.
     Reachable vertices receive their shortest-path distance (as `(d : ℕ∞)`);
@@ -305,22 +408,16 @@ lemma bfs_of_empty_next (G : SimpleDiGraph α) (visited frontier : Finset α)
     (h_ne : (frontier.biUnion (fun v ↦ N⁺(G,v))) \ visited = ∅) :
     bfs G visited frontier d dist =
       fun u => if u ∈ frontier then (d : ℕ∞) else dist u := by simp_all [bfs]
-  -- conv_lhs => unfold bfs
-  -- rw [if_neg h_fe]; simp only [h_ne, ite_true]
 
 /-- When both the frontier and the next frontier are non-empty, BFS advances one level. -/
 @[simp, grind .]
 lemma bfs_of_nonempty_next (G : SimpleDiGraph α) (visited frontier : Finset α)
-    (d : ℕ) (dist : α → ℕ∞)
-    (h_fe : frontier ≠ ∅)
+    (d : ℕ) (dist : α → ℕ∞) (h_fe : frontier ≠ ∅)
     (h_ne : (frontier.biUnion (fun v ↦ N⁺(G,v))) \ visited ≠ ∅) :
     bfs G visited frontier d dist =
       bfs G (visited ∪ (frontier.biUnion (fun v ↦ N⁺(G, v))) \ visited)
-          ((frontier.biUnion (fun v ↦ N⁺(G, v))) \ visited)
-          (d + 1)
+          ((frontier.biUnion (fun v ↦ N⁺(G, v))) \ visited) (d + 1)
           (fun u => if u ∈ frontier then (d : ℕ∞) else dist u) := by grind [bfs]
-  -- conv_lhs => unfold bfs
-  -- rw [if_neg h_fe]; simp only [if_neg h_ne]
 
 /-- When BFS closes a layer (next is empty), any vertex not in the frontier keeps its distance. -/
 @[simp, grind .]
@@ -330,9 +427,6 @@ lemma bfs_dist_stable_of_empty_next (G : SimpleDiGraph α)
     (h_next : (frontier.biUnion (fun u ↦ N⁺(G,u))) \ visited = ∅)
     (hv_fron : v ∉ frontier) :
     bfs G visited frontier d dist v = dist v := by grind
-  -- have hbfs := congr_fun
-  --   (bfs_of_empty_next G visited frontier d dist h_frontier h_next) v
-  -- simp only [hbfs, if_neg hv_fron]
 
 end bfsAlgorithm
 
@@ -374,53 +468,34 @@ lemma bfs_stable (G : SimpleDiGraph α)
     (visited frontier : Finset α) (d : ℕ) (dist : α → ℕ∞)
     (v : α) (hv_vis : v ∈ visited) (hv_fron : v ∉ frontier) :
     bfs G visited frontier d dist v = dist v := by
-  -- *Note* `bfs` is not structurally recursive, so we cannot induct on it directly.
-  --        Instead, induct on an upper bound `m` for `(V(G) \ visited).card`;
-  --        the recursive call shrinks this measure, so the IH applies to it.
+  -- `bfs` is not structurally recursive, so we cannot induct on it directly.
+  -- Instead, induct on an upper bound `m` for `(V(G) \ visited).card`;
+  -- the recursive call shrinks this measure, so the IH applies to it.
   suffices key : ∀ (m : ℕ) (visited frontier : Finset α) (d : ℕ) (dist : α → ℕ∞),
       (V(G) \ visited).card ≤ m → v ∈ visited → v ∉ frontier →
       bfs G visited frontier d dist v = dist v from key _ _ _ _ _ le_rfl hv_vis hv_fron
   intro m
   induction m with
   | zero =>
-    -- *Note* All vertices are already visited (unvisited set is empty),
-    --        so `next` must also be empty.
+    -- All vertices are already visited (unvisited set is empty), so `next = ∅`
     intro visited frontier d dist hm hv_vis hv_fron
-    by_cases h_empty : frontier = ∅
-    · -- *Note* frontier = ∅: bfs immediately returns `dist` unchanged.
-      simp only [h_empty, bfs_of_empty_frontier]
-    · -- *Note* frontier ≠ ∅, but every vertex is visited, so no new vertex can be discovered.
-      --        Hence `next = ∅` and bfs closes the layer,
-      --        leaving `dist v` unchanged (v ∉ frontier).
-      simp_all
-      -- exact bfs_dist_stable_of_empty_next G visited frontier d dist v h_empty
-      --   (next_empty_of_all_visited G frontier visited
-      --     (Finset.card_eq_zero.mp (Nat.le_zero.mp hm))
-      --   ) hv_fron
+    -- frontier = ∅: bfs returns `dist` unchanged;
+    -- frontier ≠ ∅: `next = ∅`, so bfs closes the layer without changing `dist v` (v ∉ frontier).
+    by_cases h_empty : frontier = ∅ <;> simp_all
   | succ m ih =>
     intro visited frontier d dist hm hv_vis hv_fron
     by_cases h_empty : frontier = ∅
-    · -- *Note* frontier = ∅: bfs immediately returns `dist` unchanged.
+    · -- frontier = ∅: bfs immediately returns `dist` unchanged.
       simp only [h_empty, bfs_of_empty_frontier]
     · by_cases h_next_empty : (frontier.biUnion (fun u ↦ N⁺(G, u))) \ visited = ∅
-      · -- *Note* next = ∅: bfs closes the layer; `dist v` is unchanged because v ∉ frontier.
+      · -- next = ∅: bfs closes the layer; `dist v` is unchanged because v ∉ frontier.
         exact bfs_dist_stable_of_empty_next G visited frontier d dist v h_empty h_next_empty hv_fron
-      · -- *Note* next ≠ ∅: bfs recurses on `visited ∪ next` with the updated distance function.
-        --        We apply the IH: `v` remains visited (v ∈ visited ⊆ visited ∪ next),
-        --        `v ∉ next` (next excludes visited vertices), and the measure decreases strictly.
-        --        After the IH reduces the recursive call, `dist' v = dist v` since v ∉ frontier.
+      · -- next ≠ ∅: bfs recurses on `visited ∪ next` with the updated distance function.
+        -- We apply the IH: `v` remains visited (v ∈ visited ⊆ visited ∪ next),
+        -- `v ∉ next` (next excludes visited vertices), and the measure decreases strictly.
+        -- After the IH reduces the recursive call, `dist' v = dist v` since v ∉ frontier.
         rw [congr_fun (bfs_of_nonempty_next G visited frontier d dist h_empty h_next_empty) v]
         grind
-        -- set next  := (frontier.biUnion (fun u ↦ N⁺(G, u))) \ visited
-        -- set dist' := fun u => if u ∈ frontier then (d : ℕ∞) else dist u
-        -- rw [ih (visited ∪ next) next (d + 1) dist'
-        --       (bfsBattery.decreasing_unvisited_vertices_count G visited next m
-        --         (bfsBattery.next_subset_unvisited G frontier visited)
-        --         (Finset.nonempty_of_ne_empty h_next_empty)
-        --         hm)
-        --       (Finset.mem_union_left _ hv_vis)
-        --       (fun h => (Finset.mem_sdiff.mp h).2 hv_vis)]
-        -- simp [dist', if_neg hv_fron]
 
 /-- BFS assigns exactly distance `d` to any vertex in the current frontier,
     regardless of whether the next BFS frontier is empty or not. -/
@@ -431,28 +506,10 @@ lemma bfs_frontier_dist (G : SimpleDiGraph α) (visited frontier : Finset α)
     (hv : v ∈ frontier)
     (hfv : frontier ⊆ visited) :
     bfs G visited frontier d init_dist v = d := by
-  by_cases h_next : (frontier.biUnion (fun u ↦ N⁺(G, u))) \ visited = ∅
-  · -- *Note* next = ∅: BFS closes the layer; v ∈ frontier gets distance d
-    simp_all
-    -- have hbfs := congr_fun
-    --   (bfs_of_empty_next G visited frontier d init_dist h_frontier h_next) v
-    -- rw [hbfs, if_pos hv]
-  · -- *Note* next ≠ ∅: BFS recurses,
-    --        but bfs_stable freezes v's distance since v ∈ visited, v ∉ next
-    simp_all; grind
-    -- have hv_vis : v ∈ visited := hfv hv
-    -- have hv_not_next : v ∉ (frontier.biUnion (fun u ↦ N⁺(G, u))) \ visited :=
-    --   fun h => (Finset.mem_sdiff.mp h).2 hv_vis
-    -- have hbfs := congr_fun
-    --   (bfs_of_nonempty_next G visited frontier d init_dist h_frontier h_next) v
-    -- simp only [hbfs]
-    -- rw [bfs_stable G
-    --       (visited ∪ (frontier.biUnion (fun u ↦ N⁺(G, u))) \ visited)
-    --       ((frontier.biUnion (fun u ↦ N⁺(G, u))) \ visited)
-    --       (d + 1)
-    --       (fun u => if u ∈ frontier then (d : ℕ∞) else init_dist u) v
-    --       (Finset.mem_union_left _ hv_vis) hv_not_next]
-    -- simp [hv]
+  -- next = ∅: BFS closes the layer
+  -- next ≠ ∅: BFS recurses (this requires `lemma bfs_stable`, see commit history)
+  by_cases h_next : (frontier.biUnion (fun u ↦ N⁺(G, u))) \ visited = ∅ <;> simp_all
+  grind
 
 /-- Helper lemma to prove `bfs_complete`:
     If a simple path of length k ending at v exists whose head lies in frontier
@@ -468,48 +525,35 @@ lemma bfs_complete_aux (G : SimpleDiGraph α) (v : α)
     bfs G visited frontier d init_dist v ≤ d + w.length := by
   induction m generalizing visited frontier d init_dist w with
   | zero => simp at hn
-    -- exact absurd hn (Nat.not_lt_zero _)
   | succ m ih =>
     by_cases h_frontier : frontier = ∅
     · simp [h_frontier] at hw_head
     · rcases Nat.eq_zero_or_pos w.length with h_len | h_len
-      · -- *Note* w.length = 0: v is in the frontier; BFS assigns exactly d
+      · -- w.length = 0: v is in the frontier; BFS assigns exactly d
         have hv_front : v ∈ frontier :=
           hw_tail ▸ (Walk.head_eq_tail_of_length_zero w h_len ▸ hw_head)
         rw [bfs_frontier_dist G visited frontier d init_dist v h_frontier hv_front hfv]
         simp [h_len]
-      · -- *Note* w.length > 0: expand BFS one step; case-split on whether next is empty
+      · -- w.length > 0: expand BFS one step; case-split on whether next is empty
         unfold bfs
         set next  := (Finset.biUnion frontier (fun u ↦ N⁺(G, u))) \ visited
         set dist' := fun u => if u ∈ frontier then (d : ℕ∞) else init_dist u
         simp only [if_neg h_frontier]
         by_cases h_next : next = ∅
-        · -- *Note* next = ∅: first out-neighbor of w.head would lie in next = ∅, contradiction
+        · -- next = ∅: first out-neighbor of w.head would lie in next = ∅, contradiction
           obtain ⟨a₁, _, _, _, ha₁_next⟩ := walk_first_succ_mem_next
             G frontier visited next rfl w hw.1 h_len hw_head hw_avoid
           simp [h_next] at ha₁_next
-        · -- *Note* next ≠ ∅: BFS recurses;
-          --        find the first next-frontier vertex and apply IH on suffix
+        · -- next ≠ ∅: BFS recurses; get shorter suffix from next frontier and apply IH
           simp only [if_neg h_next]
-          obtain ⟨u, hu_supp, hu_next, hu_ne_hd, as, bs, heq_split, hu_prev⟩ :=
-            first_next_entry_of_path G frontier visited next rfl w hw hw_head h_len hw_avoid hfv
-          let w' : Walk α :=
-            ⟨w.seq.dropUntil u hu_supp, dropUntil_iswalk w.seq u hu_supp w.valid⟩
-          have hw'_head : w'.head = u    := VertexSeq.head_dropUntil w.seq u hu_supp
-          have hw'_tail : w'.tail = v    := by
-            simp only [w', Walk.tail]; rw [VertexSeq.tail_dropUntil]; exact hw_tail
-          have hw'_path : Path.IsPathIn G w' := Path.IsPathIn.suffix G w u hu_supp hw
-          have hw'_lt_w : w'.length < w.length :=
-            VertexSeq.dropUntil_length_lt_of_ne_head hu_supp hu_ne_hd
-          have hw'_avoid :=
-            walk_suffix_avoids_visited_union_next G visited next w hw
-              hw_avoid u hu_supp hu_ne_hd hu_next as bs heq_split hu_prev
-          have hbound := ih (visited ∪ next) next (d + 1) dist' w'
-            hw'_path (hw'_head ▸ hu_next) hw'_tail hw'_avoid Finset.subset_union_right (by omega)
+          obtain ⟨w', hw'_head, hw'_tail, hw'_path, hw'_lt_w, hw'_avoid⟩ :=
+            bfs_inductive_step_witness G frontier visited next rfl w hw
+              hw_head h_len hw_avoid hfv
+          have hbound := ih (visited ∪ next) next (d + 1) dist' w' hw'_path hw'_head
+            (hw'_tail.trans hw_tail) hw'_avoid Finset.subset_union_right (by omega)
           calc bfs G (visited ∪ next) next (d + 1) dist' v
               ≤ ↑(d + 1) + ↑w'.length := hbound
             _ ≤ ↑d + ↑w.length        := by
-                have h : w'.length + 1 ≤ w.length := Nat.succ_le_of_lt hw'_lt_w
                 exact_mod_cast (show d + 1 + w'.length ≤ d + w.length by omega)
 
 /-- Sub Goal A for `bfs_correct`:
@@ -522,38 +566,10 @@ theorem bfs_complete (G : SimpleDiGraph α) (root : α) (v : α) (k : ℕ)
   obtain ⟨w, hw, hw_head, hw_tail, hw_len⟩ := hk
   rw [← hw_len]
   simp only [bfsDistance, bfsDistances]
-  have hn : w.length < #V(G) := by
-    have h1 : w.support.length = w.length + 1 := by
-      simp [Walk.support, VertexSeq.toList_length_eq]
-    have hsupp_sub : ∀ x ∈ w.support, x ∈ V(G) := by
-      suffices h : ∀ (ww : Walk α), IsWalkIn G ww → ∀ x ∈ ww.support, x ∈ V(G)
-        from h w hw.1
-      intro ww hww
-      induction hww with
-      | singleton v hv => grind
-        -- intro x hx
-        -- simp only [support, VertexSeq.toList, List.mem_cons, List.not_mem_nil, or_false] at hx
-        -- exact hx ▸ hv
-      | cons w' u' hw' hedg ih =>
-        intro x hx
-        simp only [support, append_single, VertexSeq.toList, List.mem_cons] at hx
-        rcases hx with rfl | hx
-        · exact (G.incidence _ hedg).2
-        · exact ih x hx
-    have h2 : w.support.length ≤ #V(G) :=
-      have hnd : w.support.Nodup := hw.2
-      calc w.support.length
-          = w.support.toFinset.card := (List.toFinset_card_of_nodup hnd).symm
-        _ ≤ V(G).card               := by
-            apply Finset.card_le_card
-            intro x hx
-            rw [List.mem_toFinset] at hx
-            exact hsupp_sub x hx
-    omega
   have haux := bfs_complete_aux G v (#V(G)) {root} {root} 0 (fun _ => ⊤) w
     hw (Finset.mem_singleton.mpr hw_head) hw_tail
     (fun x _ hne => mt Finset.mem_singleton.mp (hw_head ▸ hne))
-    (Finset.Subset.refl _) hn
+    (Finset.Subset.refl _) (Path.path_length_lt_card_vertices G w hw)
   simp only [Nat.cast_zero, zero_add] at haux
   exact_mod_cast haux
 
@@ -563,18 +579,18 @@ theorem bfs_complete (G : SimpleDiGraph α) (root : α) (v : α) (k : ℕ)
 @[simp]
 theorem bfs_sound (G : SimpleDiGraph α) (root : α) (v : α)
     (visited frontier : Finset α) (d : ℕ) (init_dist : α → ℕ∞)
-    -- *Note* every distance already in `init_dist` corresponds to a real path from `root`
+    -- every distance already in `init_dist` corresponds to a real path from `root`
     (h_dist : ∀ v : α, init_dist v ≠ ⊤ →
         ∃ w : Walk α, Path.IsPathIn G w ∧ w.head = root ∧ w.tail = v ∧
           (w.length : ℕ∞) = init_dist v)
-    -- *Note* every `frontier` vertex has a path of length `d` whose vertices lie in `visited`
+    -- every `frontier` vertex has a path of length `d` whose vertices lie in `visited`
     (h_front : ∀ v ∈ frontier,
         ∃ w : Walk α, Path.IsPathIn G w ∧ w.head = root ∧ w.tail = v ∧
           (w.length : ℕ∞) = d ∧ ∀ x ∈ w.support, x ∈ visited)
     (hv : bfs G visited frontier d init_dist v ≠ ⊤) :
     ∃ w : Walk α, Path.IsPathIn G w ∧ w.head = root ∧ w.tail = v ∧
         (w.length : ℕ∞) = bfs G visited frontier d init_dist v := by
-  -- *Note* Induct on an upper bound for the termination measure (V(G) \ visited).card
+  -- Induct on an upper bound for the termination measure (V(G) \ visited).card
   suffices key : ∀ (m : ℕ) (visited frontier : Finset α) (d : ℕ) (init_dist : α → ℕ∞),
       (V(G) \ visited).card ≤ m →
       (∀ v : α, init_dist v ≠ ⊤ →
@@ -591,101 +607,44 @@ theorem bfs_sound (G : SimpleDiGraph α) (root : α) (v : α)
   induction m with
   | zero =>
     intro visited frontier d init_dist hm h_dist h_front hv
-    -- *Note* next = ∅ because V(G) ⊆ visited (card ≤ 0)
+    -- next = ∅ because V(G) ⊆ visited (card ≤ 0)
     have hnext_empty : (frontier.biUnion (fun u ↦ N⁺(G, u))) \ visited = ∅ := by simp_all
-      -- have hvG : V(G) \ visited = ∅ := Finset.card_eq_zero.mp (Nat.le_zero.mp hm)
-      -- have hs : (frontier.biUnion (fun u ↦ N⁺(G, u))) \ visited ⊆ V(G) \ visited :=
-      --   next_subset_unvisited G frontier visited
-      -- exact Finset.subset_empty.mp (hvG ▸ hs)
     by_cases h_empty : frontier = ∅
-    · -- *Note* frontier = ∅: bfs returns init_dist
+    · -- frontier = ∅: bfs returns init_dist
       simp_all
-      -- simp only [h_empty, bfs_of_empty_frontier] at hv ⊢
-      -- exact h_dist v hv
-    · -- *Note* frontier ≠ ∅, next = ∅: bfs returns fun u => if u ∈ frontier then d else init_dist u
+    · -- frontier ≠ ∅, next = ∅: bfs returns fun u => if u ∈ frontier then d else init_dist u
       grind
-      -- have hbfs := congr_fun
-      --   (bfs_of_empty_next G visited frontier d init_dist h_empty hnext_empty) v
-      -- rw [hbfs] at hv ⊢
-      -- split_ifs at hv ⊢ with hv_front
-      -- · exact h_front v hv_front |>.imp fun w ⟨hp, hh, ht, hl, _⟩ => ⟨hp, hh, ht, hl⟩
-      -- · exact h_dist v hv
   | succ m ih =>
     intro visited frontier d init_dist hm h_dist h_front hv
     by_cases h_empty : frontier = ∅
     · simp only [h_empty, bfs_of_empty_frontier] at hv ⊢; exact h_dist v hv
     · by_cases h_next_empty : (frontier.biUnion (fun u ↦ N⁺(G, u))) \ visited = ∅
-      · -- *Note* next = ∅: bfs returns fun u => if u ∈ frontier then d else init_dist u
+      · -- next = ∅: bfs returns fun u => if u ∈ frontier then d else init_dist u
         grind
-        -- have hbfs := congr_fun
-        --   (bfs_of_empty_next G visited frontier d init_dist h_empty h_next_empty) v
-        -- rw [hbfs] at hv ⊢
-        -- split_ifs at hv ⊢ with hv_front
-        -- · exact h_front v hv_front |>.imp fun w ⟨hp, hh, ht, hl, _⟩ => ⟨hp, hh, ht, hl⟩
-        -- · exact h_dist v hv
-      · -- *Note* next ≠ ∅: bfs recurses; apply IH with smaller measure
+      · -- next ≠ ∅: bfs recurses; apply IH with smaller measure
         have hbfs_eq := congr_fun
           (bfs_of_nonempty_next G visited frontier d init_dist h_empty h_next_empty) v
         rw [hbfs_eq] at hv ⊢
         set next  := (frontier.biUnion (fun u ↦ N⁺(G, u))) \ visited
         set dist' := fun u => if u ∈ frontier then (d : ℕ∞) else init_dist u
         have hmeasure : (V(G) \ (visited ∪ next)).card ≤ m := by grind
-          -- have hnext_sub : next ⊆ V(G) \ visited := next_subset_unvisited G frontier visited
-          -- have hkey : V(G) \ (visited ∪ next) = (V(G) \ visited) \ next := by
-          --   simp only [← Finset.sup_eq_union, ← sdiff_sdiff_left]
-          -- have hcard := Finset.card_sdiff_add_card_eq_card hnext_sub
-          -- have hpos  := (Finset.nonempty_of_ne_empty h_next_empty).card_pos
-          -- rw [hkey]; omega
         apply ih (visited ∪ next) next (d + 1) dist' hmeasure
-        · -- *Note* h_dist': ∀ u, dist' u ≠ ⊤ → ∃ path ...
+        · -- h_dist': ∀ u, dist' u ≠ ⊤ → ∃ path ...
           grind
-          -- intro u hu
-          -- simp only [dist'] at hu
-          -- split_ifs at hu with hu_front
-          -- · obtain ⟨w, hw_path, hw_head, hw_tail, hw_len, _⟩ := h_front u hu_front
-          --   simp only [dist', if_pos hu_front]
-          --   exact ⟨w, hw_path, hw_head, hw_tail, hw_len⟩
-          -- · simp only [dist', if_neg hu_front]
-          --   exact h_dist u hu
-        · -- *Note* h_front': ∀ u ∈ next, ∃ path of length d+1 ...
-          intro u hu_next
-          have hu_in_next : u ∈ next := hu_next
-          rw [Finset.mem_sdiff, Finset.mem_biUnion] at hu_next
-          obtain ⟨⟨v_src, hv_front, hv_neigh⟩, hu_not_vis⟩ := hu_next
-          simp only [OutNeighbors, Finset.mem_filter] at hv_neigh
-          obtain ⟨_, e, he_edge, he1, he2, _⟩ := hv_neigh
-          have hedg : (v_src, u) ∈ G.edgeSet := by grind
-            -- have : e = (v_src, u) := Prod.ext he1.symm he2.symm; rwa [← this]
-          obtain ⟨w_v, hw_path, hw_head, hw_tail, hw_len, hw_supp⟩ := h_front v_src hv_front
-          have h_neq : u ≠ w_v.tail := hw_tail ▸ Ne.symm (G.loopless (v_src, u) hedg)
-          refine ⟨w_v.append_single u h_neq, ?_, ?_, ?_, ?_, ?_⟩
-          · constructor
-            · exact IsWalkIn.cons w_v u hw_path.1 (hw_tail ▸ hedg)
-            · simp only [Walk.IsPath, Walk.append_single, Walk.support, VertexSeq.toList]
-              exact List.nodup_cons.mpr ⟨fun h => hu_not_vis (hw_supp u h), hw_path.2⟩
-          · change (w_v.seq.cons u).head = root
-            rw [VertexSeq.con_head_eq]; change w_v.head = root; exact hw_head
-          · rfl
-          · have hlen : (w_v.append_single u h_neq).length = 1 + w_v.length := rfl
-            rw [hlen]; push_cast; rw [hw_len]; ring
-          · intro x hx
-            simp only [Walk.append_single, Walk.support, VertexSeq.toList, List.mem_cons] at hx
-            grind
-            -- rcases hx with rfl | hx
-            -- · exact Finset.mem_union_right _ hu_in_next
-            -- · exact Finset.mem_union_left _ (hw_supp x hx)
+        · -- h_front': BFS level-invariant propagates from frontier to next
+          exact next_frontier_has_paths G root visited frontier d next rfl h_front
         · exact hv
 
-theorem bfs_correct (G : SimpleDiGraph α) (v₁ v₂ : α)
+theorem bfsDistance_correct (G : SimpleDiGraph α) (v₁ v₂ : α)
     (h₁ : v₁ ∈ G.vertexSet) :
     bfsDistance G v₁ v₂ = Path.shortestPath G v₁ v₂ := by
   apply le_antisymm
-  · -- *Note* Goal A: Distance G v₁ v₂ ≤ shortestPath G v₁ v₂
+  · -- Goal A: Distance G v₁ v₂ ≤ shortestPath G v₁ v₂
     unfold Path.shortestPath
     apply le_iInf; intro w
     apply le_iInf; intro ⟨hw_path, hw_head, hw_tail⟩
     exact bfs_complete G v₁ v₂ w.length ⟨w, hw_path, hw_head, hw_tail, rfl⟩
-  · -- *Note* Goal B: shortestPath G v₁ v₂ ≤ Distance G v₁ v₂
+  · -- Goal B: shortestPath G v₁ v₂ ≤ Distance G v₁ v₂
     unfold Path.shortestPath
     by_cases hv : bfsDistance G v₁ v₂ = ⊤
     · rw [hv]; exact le_top
@@ -694,17 +653,8 @@ theorem bfs_correct (G : SimpleDiGraph α) (v₁ v₂ : α)
         bfs_sound G v₁ v₂ {v₁} {v₁} 0 (fun _ => ⊤)
           -- h_dist: init_dist = ⊤ everywhere, so hypothesis is vacuous
           (fun u hu => absurd rfl hu)
-          -- h_front: singleton walk v₁ → v₁ of length 0
-          (fun u hu => ⟨
-            ⟨.singleton v₁, .singleton v₁⟩,
-            ⟨IsWalkIn.singleton v₁ h₁, by simp [Walk.IsPath, Walk.support, VertexSeq.toList]⟩,
-            rfl,
-            (Finset.mem_singleton.mp hu).symm,
-            by simp [Walk.length, VertexSeq.length],
-            fun x hx => by
-              simp only [support, VertexSeq.toList, List.mem_cons, List.not_mem_nil, or_false] at hx
-              exact Finset.mem_singleton.mpr hx
-          ⟩)
+          -- h_front: trivial path at root satisfies the BFS initialization invariant
+          (bfs_initial_front_invariant G v₁ h₁)
           hv
       exact iInf_le_of_le w (iInf_le_of_le ⟨hw_path, hw_head, hw_tail⟩ (le_of_eq hw_len))
 
@@ -712,5 +662,5 @@ end bfsCorrectness
 
 -- #TODOs:
 -- 1. etedn bfs to produce a search tree (or forest) and prove its properties
--- 2. extend to undirected graphs (should be straightforward,
---    just need to add the reverse edge in the BFS step)
+-- 2. extend to undirected graphs (should be straightforward hopefully,
+--    e.g. by adding the reverse edge in the BFS steps)

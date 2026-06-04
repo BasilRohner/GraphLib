@@ -188,13 +188,8 @@ lemma dropUntil_toList_nodup [DecidableEq α] {w : VertexSeq α} {v : α} (h : v
   induction w generalizing v with
   | singleton _ => simpa [dropUntil]
   | cons w2 x ih =>
-    simp only [toList, List.nodup_cons] at hn
-    obtain ⟨hx, hn2⟩ := hn
     unfold dropUntil
-    split_ifs with h2
-    · simp only [toList, List.nodup_cons]
-      exact ⟨fun hx' => hx (mem_dropUntil w2 v x h2 hx'), ih h2 hn2⟩
-    · simp [toList]
+    split_ifs with h2 <;> grind
 
 /-- If v appears in a VertexSeq w but is not its head,
     then the dropUntil v sub-sequence is strictly shorter than w.
@@ -208,14 +203,8 @@ lemma dropUntil_length_lt_of_ne_head [DecidableEq α]
     simp only [VertexSeq.toList, List.mem_cons, List.not_mem_nil, or_false] at h
     exact absurd (h ▸ rfl) hne
   | cons w2 x ih =>
-    simp only [VertexSeq.head] at hne
     unfold VertexSeq.dropUntil
-    split_ifs with h2
-    · simp only [VertexSeq.length]
-      have := ih h2 hne
-      omega
-    · simp only [VertexSeq.length]
-      exact Nat.pos_of_neZero (1 + w2.length)
+    split_ifs with h2 <;> grind [VertexSeq.length]
 
 @[grind] def loopErase [DecidableEq α] : VertexSeq α → VertexSeq α
   | .singleton v => .singleton v
@@ -254,10 +243,7 @@ lemma toList_getLast_is_head (w : VertexSeq α) (h : w.toList ≠ []) :
     w.toList.getLast h = w.head := by
   induction w with
   | singleton v => simp [VertexSeq.toList, VertexSeq.head]
-  | cons p u ih =>
-      simp only [VertexSeq.toList, VertexSeq.head]
-      rw [List.getLast_cons (by simp; induction p <;> simp [VertexSeq.toList])]
-      exact ih (by simp; induction p <;> simp [VertexSeq.toList])
+  | cons p u ih => grind
 
 end VertexSeq
 
@@ -397,8 +383,7 @@ lemma walk_tail_dropUntil [DecidableEq α] (w : Walk α) (v : α) (hv : v ∈ w.
 lemma walk_head_mem_prefix [DecidableEq α] (w : Walk α)
     (u : α) (hu_supp : u ∈ w.support) :
     w.head ∈ (w.seq.takeUntil u hu_supp).dropTail.toList := by
-  have h : (w.seq.takeUntil u hu_supp).dropTail.head = w.head := by
-    simp [VertexSeq.dropTail_head, VertexSeq.head_takeUntil]
+  have h : (w.seq.takeUntil u hu_supp).dropTail.head = w.head := by simp
   exact h ▸ VertexSeq.head_mem_toList _
 
 /-! ## Walk append, reverse and related lemmas -/
